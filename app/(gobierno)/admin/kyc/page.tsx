@@ -1,7 +1,8 @@
-// app/(gobierno)/admin/kyc/page.tsx — Server Component con datos reales de Supabase
+// app/(gobierno)/admin/kyc/page.tsx — Server Component con datos reales + mock
 import Link from 'next/link';
-import { createSupabaseServiceClient } from '@/lib/supabase/server';
+import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase/server';
 import { KycAuditRow } from './KycAuditRow';
+import { isDemoAdmin, MOCK_KYC_SOLICITUDES, MOCK_ADMIN_KPIS } from '@/lib/mock-data';
 
 type KycSolicitud = {
   id: string;
@@ -39,43 +40,66 @@ function EstadoBadge({ estado }: { estado: string }) {
 }
 
 export default async function KycAdminPage() {
+  const supabase = createSupabaseServerClient();
   const admin = createSupabaseServiceClient();
+  const { data: { user } } = await supabase.auth.getUser();
 
-  // Métricas reales
-  const { data: stats } = await admin
-    .from('ciudadanos')
-    .select('estado_kyc');
+  // ═══════════════════════════════════════════════════════════════════════════
+  // DETECCIÓN DE ADMIN DEMO
+  // ═══════════════════════════════════════════════════════════════════════════
+  const isDemo = isDemoAdmin(user?.email);
 
-  const totalVerificados  = stats?.filter((c) => c.estado_kyc === 'Verificado').length  ?? 0;
-  const totalEnProceso    = stats?.filter((c) => c.estado_kyc === 'EnProceso').length   ?? 0;
-  const totalRechazados   = stats?.filter((c) => c.estado_kyc === 'Rechazado').length   ?? 0;
-  const totalPendientes   = stats?.filter((c) => c.estado_kyc === 'Pendiente').length   ?? 0;
+  let totalVerificados = 0;
+  let totalEnProceso = 0;
+  let totalRechazados = 0;
+  let totalPendientes = 0;
+  let rows: KycSolicitud[] = [];
+  let error = null;
 
-  // Solicitudes KYC con join a ciudadanos
-  const { data: solicitudes, error } = await admin
-    .from('kyc_solicitudes')
-    .select(`
-      id,
-      ciudadano_id,
-      estado,
-      score_confianza,
-      proveedor,
-      created_at,
-      motivo_rechazo,
-      ciudadanos (
-        nombre_completo,
-        email,
-        curp,
-        url_selfie_liveness,
-        url_ine_frente,
-        estado_kyc,
-        chat_id_telegram
-      )
-    `)
-    .order('created_at', { ascending: false })
-    .limit(50);
+  if (isDemo) {
+    // MODO DEMO: Usar datos mock
+    totalVerificados = MOCK_ADMIN_KPIS.kycVerificados;
+    totalEnProceso = 2; // Las 2 solicitudes mock en proceso
+    totalRechazados = 8;
+    totalPendientes = MOCK_ADMIN_KPIS.kycPendientes - 2;
+    rows = MOCK_KYC_SOLICITUDES as KycSolicitud[];
+  } else {
+    // MODO REAL: Métricas desde Supabase
+    const { data: stats } = await admin
+      .from('ciudadanos')
+      .select('estado_kyc');
 
-  const rows = (solicitudes as KycSolicitud[] | null) ?? [];
+    totalVerificados = stats?.filter((c) => c.estado_kyc === 'Verificado').length ?? 0;
+    totalEnProceso = stats?.filter((c) => c.estado_kyc === 'EnProceso').length ?? 0;
+    totalRechazados = stats?.filter((c) => c.estado_kyc === 'Rechazado').length ?? 0;
+    totalPendientes = stats?.filter((c) => c.estado_kyc === 'Pendiente').length ?? 0;
+
+    const { data: solicitudes, error: err } = await admin
+      .from('kyc_solicitudes')
+      .select(`
+        id,
+        ciudadano_id,
+        estado,
+        score_confianza,
+        proveedor,
+        created_at,
+        motivo_rechazo,
+        ciudadanos (
+          nombre_completo,
+          email,
+          curp,
+          url_selfie_liveness,
+          url_ine_frente,
+          estado_kyc,
+          chat_id_telegram
+        )
+      `)
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    error = err;
+    rows = (solicitudes as KycSolicitud[] | null) ?? [];
+  }
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-8 md:px-10 md:py-10">

@@ -4,19 +4,35 @@ import { createSupabaseServiceClient } from '@/lib/supabase/server';
 import { revalidatePath } from 'next/cache';
 
 /**
- * aprobarKyc — Marca a un ciudadano como Verificado biométricamente.
- * Emite evento KYC_APROBADO → dispara n8n → Telegram al ciudadano.
+ * Aprobar una solicitud KYC
+ * Diagrama 8: Flujo KYC - FASE 4: REGISTRO EN BD
+ * Acepta FormData para compatibilidad con el componente existente
  */
-export async function aprobarKyc(formData: FormData): Promise<{ error?: string }> {
-  const ciudadanoId = formData.get('ciudadano_id') as string;
+export async function aprobarKyc(formData: FormData) {
   const solicitudId = formData.get('solicitud_id') as string;
+  const ciudadanoId = formData.get('ciudadano_id') as string;
 
-  if (!ciudadanoId) return { error: 'ID de ciudadano requerido' };
+  if (!solicitudId || !ciudadanoId) {
+    return { error: 'Datos incompletos' };
+  }
 
   const admin = createSupabaseServiceClient();
 
-  // 1. Actualizar estado del ciudadano
-  const { error: e1 } = await admin
+  // 1. Actualizar la solicitud KYC
+  const { error: kycError } = await admin
+    .from('kyc_solicitudes')
+    .update({
+      estado: 'Verificado',
+      completed_at: new Date().toISOString(),
+    })
+    .eq('id', solicitudId);
+
+  if (kycError) {
+    return { error: 'Error actualizando solicitud KYC' };
+  }
+
+  // 2. Actualizar el ciudadano a Verificado
+  await admin
     .from('ciudadanos')
     .update({
       estado_kyc: 'Verificado',
@@ -24,65 +40,128 @@ export async function aprobarKyc(formData: FormData): Promise<{ error?: string }
     })
     .eq('id', ciudadanoId);
 
-  if (e1) return { error: 'Error actualizando ciudadano: ' + e1.message };
-
-  // 2. Actualizar la solicitud KYC
-  if (solicitudId) {
-    await admin
-      .from('kyc_solicitudes')
-      .update({ estado: 'Aprobado' })
-      .eq('id', solicitudId);
-  }
-
-  // 3. Emitir evento KYC_APROBADO → n8n lo captura y manda Telegram
+  // 3. Emitir evento KYC_COMPLETADO para n8n (Diagrama 6)
   await admin.from('eventos_dominio').insert({
     aggregate_type: 'ciudadano',
     aggregate_id: ciudadanoId,
-    tipo_evento: 'KYC_APROBADO',
-    payload: { solicitud_id: solicitudId },
+    tipo_evento: 'KYC_COMPLETADO',
+    payload: {
+      solicitud_id: solicitudId,
+      resultado: 'APROBADO',
+      aprobado_por: 'admin_manual',
+    },
     origen: 'admin_kyc',
   });
 
+  // 4. Registrar en bitácora de auditoría
+  await admin.from('bitacora_auditoria').insert({
+    ciudadano_id: ciudadanoId,
+    accion: 'KYC Aprobado manualmente',
+    detalles: JSON.stringify({ solicitud_id: solicitudId }),
+    entity_type: 'kyc_solicitudes',
+    entity_id: solicitudId,
+  });
+
   revalidatePath('/admin/kyc');
-  return {};
+  revalidatePath('/admin');
+
+  return { success: true };
 }
 
 /**
- * rechazarKyc — Marca al ciudadano como Rechazado con motivo.
- * Emite evento KYC_RECHAZADO → n8n notifica al ciudadano.
+ * Rechazar una solicitud KYC
+ * Acepta FormData para compatibilidad con el componente existente
  */
-export async function rechazarKyc(formData: FormData): Promise<{ error?: string }> {
-  const ciudadanoId = formData.get('ciudadano_id') as string;
+export async function rechazarKyc(formData: FormData) {
   const solicitudId = formData.get('solicitud_id') as string;
-  const motivo = (formData.get('motivo') as string) || 'Documentos ilegibles o no coinciden';
+  const ciudadanoId = formData.get('ciudadano_id') as string;
+  const motivo = formData.get('motivo') as string || 'Documentos no válidos';
 
-  if (!ciudadanoId) return { error: 'ID de ciudadano requerido' };
+  if (!solicitudId || !ciudadanoId) {
+    return { error: 'Datos incompletos' };
+  }
 
   const admin = createSupabaseServiceClient();
 
-  // 1. Actualizar estado del ciudadano
+  // 1. Actualizar la solicitud KYC
+  await admin
+    .from('kyc_solicitudes')
+    .update({
+      estado: 'Rechazado',
+      motivo_rechazo: motivo,
+      completed_at: new Date().toISOString(),
+    })
+    .eq('id', solicitudId);
+
+  // 2. Actualizar el ciudadano a Rechazado
   await admin
     .from('ciudadanos')
     .update({ estado_kyc: 'Rechazado' })
     .eq('id', ciudadanoId);
 
-  // 2. Actualizar la solicitud KYC con el motivo
-  if (solicitudId) {
-    await admin
-      .from('kyc_solicitudes')
-      .update({ estado: 'Rechazado', motivo_rechazo: motivo })
-      .eq('id', solicitudId);
-  }
-
-  // 3. Emitir evento KYC_RECHAZADO → n8n notifica
+  // 3. Emitir evento para n8n
   await admin.from('eventos_dominio').insert({
     aggregate_type: 'ciudadano',
     aggregate_id: ciudadanoId,
-    tipo_evento: 'DOCUMENTO_RECHAZADO',
-    payload: { motivo, solicitud_id: solicitudId },
+    tipo_evento: 'KYC_RECHAZADO',
+    payload: {
+      solicitud_id: solicitudId,
+      motivo,
+    },
     origen: 'admin_kyc',
   });
 
+  // 4. Registrar en bitácora
+  await admin.from('bitacora_auditoria').insert({
+    ciudadano_id: ciudadanoId,
+    accion: 'KYC Rechazado',
+    detalles: JSON.stringify({ solicitud_id: solicitudId, motivo }),
+    entity_type: 'kyc_solicitudes',
+    entity_id: solicitudId,
+  });
+
   revalidatePath('/admin/kyc');
-  return {};
+  revalidatePath('/admin');
+
+  return { success: true };
+}
+
+/**
+ * Solicitar más información (volver a EnProceso)
+ */
+export async function solicitarMasInfo(formData: FormData) {
+  const solicitudId = formData.get('solicitud_id') as string;
+  const ciudadanoId = formData.get('ciudadano_id') as string;
+  const comentario = formData.get('comentario') as string || 'Se requiere información adicional';
+
+  if (!solicitudId || !ciudadanoId) {
+    return { error: 'Datos incompletos' };
+  }
+
+  const admin = createSupabaseServiceClient();
+
+  await admin
+    .from('kyc_solicitudes')
+    .update({
+      estado: 'EnProceso',
+      motivo_rechazo: `Información adicional requerida: ${comentario}`,
+    })
+    .eq('id', solicitudId);
+
+  await admin
+    .from('ciudadanos')
+    .update({ estado_kyc: 'EnProceso' })
+    .eq('id', ciudadanoId);
+
+  await admin.from('bitacora_auditoria').insert({
+    ciudadano_id: ciudadanoId,
+    accion: 'KYC - Información adicional solicitada',
+    detalles: JSON.stringify({ solicitud_id: solicitudId, comentario }),
+    entity_type: 'kyc_solicitudes',
+    entity_id: solicitudId,
+  });
+
+  revalidatePath('/admin/kyc');
+
+  return { success: true };
 }

@@ -18,8 +18,6 @@ type ObligacionCardProps = {
   onPagar?: (id: string) => void;
 };
 
-const ESTADOS_URGENTES: EstadoCumplimiento[] = ['Vencido', 'Por vencer'];
-
 function formatMonto(monto: number): string {
   return new Intl.NumberFormat('es-MX', {
     style: 'currency',
@@ -34,6 +32,7 @@ function formatFecha(fecha: string): string {
   return parseInt(day) + ' ' + meses[parseInt(month) - 1] + ' ' + year;
 }
 
+// Tarjeta para Vencido / Por vencer (urgente, borde llamativo)
 function ObligacionUrgente({ obligacion, onPagar }: ObligacionCardProps) {
   const esVencido = obligacion.estado_cumplimiento === 'Vencido';
   return (
@@ -46,13 +45,13 @@ function ObligacionUrgente({ obligacion, onPagar }: ObligacionCardProps) {
       <p className="text-h3 font-bold text-secondary tabular-nums">{formatMonto(obligacion.monto_total)}</p>
       <div className="flex items-center justify-between mt-4 gap-3">
         <p className="text-body-sm text-secondary">
-          {esVencido ? 'Vencio el' : 'Vence el'}{' '}
+          {esVencido ? 'Venció el' : 'Vence el'}{' '}
           <span className="font-semibold">{formatFecha(obligacion.fecha_vencimiento)}</span>
         </p>
         <Link
           href={('/pagar/' + obligacion.id) as Route}
           onClick={() => onPagar?.(obligacion.id)}
-          className="bg-primary text-on-primary rounded-xl px-5 py-2.5 text-body-sm font-bold whitespace-nowrap hover:bg-primary-container transition-colors"
+          className="bg-primary text-on-primary rounded-xl px-5 py-2.5 text-body-sm font-bold whitespace-nowrap hover:bg-primary/90 transition-colors"
         >
           Pagar ahora
         </Link>
@@ -61,26 +60,57 @@ function ObligacionUrgente({ obligacion, onPagar }: ObligacionCardProps) {
   );
 }
 
+// Tarjeta para Al corriente (pendiente pero no urgente, también se puede pagar)
+function ObligacionNormal({ obligacion, onPagar }: ObligacionCardProps) {
+  return (
+    <article className="bg-surface-container-low border border-outline-variant rounded-2xl p-4">
+      <div className="flex items-center gap-3">
+        <div className="w-11 h-11 bg-primary/10 rounded-full flex items-center justify-center shrink-0">
+          <span className="material-symbols-outlined text-primary text-[22px]" style={{ fontVariationSettings: "'FILL' 0" }}>receipt_long</span>
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-body-sm font-semibold text-on-surface truncate">{obligacion.tipo_tramite}</p>
+          <p className="text-body-sm text-on-surface-variant mt-0.5">
+            Vence: {formatFecha(obligacion.fecha_vencimiento)}
+          </p>
+        </div>
+        <div className="text-right shrink-0">
+          <p className="text-body-sm font-bold text-on-surface tabular-nums">{formatMonto(obligacion.monto_total)}</p>
+          <Link
+            href={('/pagar/' + obligacion.id) as Route}
+            onClick={() => onPagar?.(obligacion.id)}
+            className="text-primary text-body-sm font-semibold hover:underline"
+          >
+            Pagar
+          </Link>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+// Tarjeta para Pagado (solo informativa)
 function ObligacionPagada({ obligacion }: ObligacionCardProps) {
   return (
-    <article className="bg-surface-container-low border border-outline-variant rounded-2xl p-4 flex items-center gap-3">
+    <article className="bg-surface-container-low border border-outline-variant rounded-2xl p-4 flex items-center gap-3 opacity-70">
       <div className="w-11 h-11 bg-primary/10 rounded-full flex items-center justify-center shrink-0">
-        <span className="material-symbols-outlined text-primary text-[22px]" style={{ fontVariationSettings: "'FILL' 0, 'wght' 300" }}>assignment</span>
+        <span className="material-symbols-outlined text-primary text-[22px]" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-body-sm font-semibold text-on-surface truncate">{obligacion.tipo_tramite}</p>
-        <p className="text-body-sm text-primary flex items-center gap-1 mt-0.5">
-          <span className="material-symbols-outlined text-[14px]" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
-          {obligacion.estado_cumplimiento}
-        </p>
+        <p className="text-body-sm text-primary mt-0.5">Pagado</p>
       </div>
-      <span className="material-symbols-outlined text-outline text-[20px]">chevron_right</span>
+      <span className="text-body-sm font-bold text-on-surface-variant tabular-nums">{formatMonto(obligacion.monto_total)}</span>
     </article>
   );
 }
 
 export function ObligacionCard({ obligacion, onPagar }: ObligacionCardProps) {
-  const esUrgente = ESTADOS_URGENTES.includes(obligacion.estado_cumplimiento);
-  if (esUrgente) return <ObligacionUrgente obligacion={obligacion} onPagar={onPagar} />;
-  return <ObligacionPagada obligacion={obligacion} onPagar={onPagar} />;
+  if (obligacion.estado_cumplimiento === 'Pagado') {
+    return <ObligacionPagada obligacion={obligacion} onPagar={onPagar} />;
+  }
+  if (obligacion.estado_cumplimiento === 'Vencido' || obligacion.estado_cumplimiento === 'Por vencer') {
+    return <ObligacionUrgente obligacion={obligacion} onPagar={onPagar} />;
+  }
+  return <ObligacionNormal obligacion={obligacion} onPagar={onPagar} />;
 }

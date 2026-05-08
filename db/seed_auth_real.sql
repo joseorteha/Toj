@@ -1,9 +1,13 @@
 -- ════════════════════════════════════════════════════════════
--- TOJ — SEED REAL CON UUIDS DE SUPABASE AUTH
--- Ejecuta en: Supabase → SQL Editor
+-- ⚠️  ARCHIVO CONSOLIDADO EN: db/seed_completo.sql
+-- ════════════════════════════════════════════════════════════
+-- Este archivo ha sido fusionado con seed_completo.sql que
+-- incluye TODO: institución, ciudadanos, usuarios, roles,
+-- obligaciones, KYC y pagos de ejemplo.
 --
--- Este script usa los UUID reales vistos en Auth y los vincula
--- directamente como ciudadanos_id para evitar mapeos falsos.
+-- USA: db/seed_completo.sql
+-- ════════════════════════════════════════════════════════════
+-- (Contenido original conservado abajo por referencia)
 -- ════════════════════════════════════════════════════════════
 
 -- ─────────────────────────────────────────────────────────────

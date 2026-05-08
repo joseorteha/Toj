@@ -1,94 +1,72 @@
 -- ════════════════════════════════════════════════════════════
--- TOJ — CREAR USUARIO CIUDADANO CON AUTH
---
--- Usa este script DESPUÉS de crear el usuario en:
---   Supabase → Authentication → Users → Add user
---
--- El flujo normal es que el ciudadano se registra en /registro
--- pero para demo puedes crear usuarios manualmente.
+-- TOJ — PLANTILLA PARA CREAR UN CIUDADANO NUEVO
 -- ════════════════════════════════════════════════════════════
-
--- INSTRUCCIONES:
--- 1. Crea el usuario en Supabase Auth con:
---    Email:    jose@demo.toj.mx
---    Password: TojDemo2026!
---    (O el email que quieras)
--- 2. Copia el UUID del usuario creado
--- 3. Reemplaza 'UUID-DEL-AUTH-USER' y 'UUID-CIUDADANO-EXISTENTE'
---    (si el ciudadano ya existe en la tabla ciudadanos) 
---    O deja que se cree uno nuevo
+-- 
+-- ⚠️  PARA DATOS DE DEMO, USA: db/seed_completo.sql
+--
+-- Esta plantilla es útil si necesitas agregar UN ciudadano
+-- nuevo que no está en el seed. Sigue estos pasos:
+--
+-- 1. Crea el usuario en Supabase Auth
+-- 2. Copia el UUID generado
+-- 3. Reemplaza los valores marcados con ← CAMBIAR
 -- 4. Ejecuta en SQL Editor
+-- ════════════════════════════════════════════════════════════
 
 DO $$
 DECLARE
-  v_auth_uid UUID  := 'PEGA-AQUI-EL-UUID-DEL-AUTH-USER'; -- ← CAMBIAR
-  v_ciudadano_id UUID;
+  v_auth_uid UUID := 'PEGA-AQUI-EL-UUID-DEL-AUTH-USER'; -- ← CAMBIAR
 BEGIN
 
-  -- Opción A: Crear nuevo ciudadano (si no existe en el padrón)
+  -- Crear ciudadano (id = auth_user_id para simplificar)
   INSERT INTO public.ciudadanos (
-    id,
-    nombre_completo,
-    email,
-    curp,
-    estado_kyc,
-    cuenta_stp_clabe
-  )
-  VALUES (
+    id, nombre_completo, email, curp, estado_kyc, cuenta_stp_clabe
+  ) VALUES (
     v_auth_uid,
-    'José Demo Usuario',         -- ← CAMBIAR al nombre real
-    'jose@demo.toj.mx',          -- ← CAMBIAR al email real
-    'DEMO000000HVZXXX00',        -- ← CAMBIAR al CURP real (opcional)
+    'Nombre Completo',           -- ← CAMBIAR
+    'email@ejemplo.com',         -- ← CAMBIAR (debe coincidir con Auth)
+    'XXXX000000HVZXXX00',        -- ← CAMBIAR (CURP real o ficticio)
     'Pendiente',
-    '646180500001299999'         -- CLABE única (puedes cambiarla)
+    '646180500001' || LPAD(FLOOR(RANDOM()*999999)::text, 6, '0')
   )
-  ON CONFLICT (id) DO UPDATE
-    SET nombre_completo = EXCLUDED.nombre_completo,
-        email = EXCLUDED.email,
-        curp = EXCLUDED.curp,
-        estado_kyc = EXCLUDED.estado_kyc,
-        cuenta_stp_clabe = EXCLUDED.cuenta_stp_clabe
-  RETURNING id INTO v_ciudadano_id;
+  ON CONFLICT (id) DO UPDATE SET
+    nombre_completo  = EXCLUDED.nombre_completo,
+    email            = EXCLUDED.email,
+    curp             = EXCLUDED.curp,
+    estado_kyc       = EXCLUDED.estado_kyc,
+    cuenta_stp_clabe = EXCLUDED.cuenta_stp_clabe;
 
-  -- Registrar en usuarios_plataforma como CIUDADANO
+  -- Vincular en usuarios_plataforma
   INSERT INTO public.usuarios_plataforma (
-    auth_user_id,
-    email,
-    nombre_mostrar,
-    tipo_usuario,
-    estado,
-    ciudadano_id
-  )
-  VALUES (
+    auth_user_id, email, nombre_mostrar, tipo_usuario, estado, ciudadano_id
+  ) VALUES (
     v_auth_uid,
-    'jose@demo.toj.mx',          -- ← CAMBIAR al email real
-    'José Demo',                 -- ← CAMBIAR al nombre real
+    'email@ejemplo.com',         -- ← CAMBIAR (mismo email)
+    'Nombre Corto',              -- ← CAMBIAR
     'CIUDADANO',
     'Activo',
-    v_ciudadano_id
+    v_auth_uid
   )
-  ON CONFLICT (auth_user_id) DO UPDATE
-    SET ciudadano_id = v_ciudadano_id,
-        tipo_usuario = 'CIUDADANO',
-        estado = 'Activo';
+  ON CONFLICT (auth_user_id) DO UPDATE SET
+    ciudadano_id   = v_auth_uid,
+    tipo_usuario   = 'CIUDADANO',
+    nombre_mostrar = EXCLUDED.nombre_mostrar,
+    estado         = 'Activo';
 
-  -- Asignar una obligación demo al nuevo ciudadano
+  -- Opcional: Crear una obligación de ejemplo
   INSERT INTO public.obligaciones (
-    ciudadano_id, institucion_id,
-    tipo_tramite, identificador_externo,
+    ciudadano_id, institucion_id, tipo_tramite, identificador_externo,
     monto_original, monto_recargos, monto_total, monto_pendiente,
-    fecha_vencimiento, estado_cumplimiento,
-    ejercicio, periodo_referencia
+    fecha_vencimiento, estado_cumplimiento
   ) VALUES (
-    v_ciudadano_id,
+    v_auth_uid,
     'aaaaaaaa-0000-0000-0000-000000000001',
     'Predial',
-    'PRED-DEMO-' || LEFT(v_ciudadano_id::text, 8),
+    'PRED-' || UPPER(LEFT(v_auth_uid::text, 8)),
     1500.00, 0.00, 1500.00, 1500.00,
-    '2026-06-30', 'Al corriente',
-    2026, 'Anual 2026'
+    '2026-06-30', 'Al corriente'
   );
 
-  RAISE NOTICE '✅ Ciudadano registrado. ciudadano_id = %', v_ciudadano_id;
+  RAISE NOTICE '✅ Ciudadano creado: %', v_auth_uid;
 END;
 $$;

@@ -1,10 +1,10 @@
 import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
+import { isDemoCiudadano, MOCK_OBLIGACIONES, MOCK_CIUDADANO } from '@/lib/mock-data';
 
 /**
  * POST /api/obligaciones/[id]/generar-pago
  * Diagrama 2 — Paso 2: Genera CLABE para pagar una obligación.
- * Crea el registro en `pagos` con estado PENDIENTE y devuelve la CLABE.
  */
 export async function POST(
   _request: Request,
@@ -16,6 +16,19 @@ export async function POST(
 
     if (!user) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
+    }
+
+    // Modo demo: responder con datos mock
+    if (isDemoCiudadano(user.email) || params.id.startsWith('obl-demo-')) {
+      const ob = MOCK_OBLIGACIONES.find(o => o.id === params.id) ?? MOCK_OBLIGACIONES[0];
+      const claveRastreo = `TOJ${Date.now().toString().slice(-10)}`;
+      return NextResponse.json({
+        pago_id: `pago-demo-${Date.now()}`,
+        clabe: MOCK_CIUDADANO.cuenta_stp_clabe,
+        clave_rastreo: claveRastreo,
+        monto: ob.monto_pendiente ?? ob.monto_total,
+        concepto: `TOJ ${ob.id.slice(0, 8).toUpperCase()}`,
+      });
     }
 
     const admin = createSupabaseServiceClient();

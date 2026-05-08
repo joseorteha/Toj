@@ -2,8 +2,9 @@
 import Link from 'next/link';
 import type { Route } from 'next';
 import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase/server';
-import { notFound, redirect } from 'next/navigation';
+import { redirect } from 'next/navigation';
 import { SimularPagoBtn } from './SimularPagoBtn';
+import { isDemoCiudadano, MOCK_OBLIGACIONES, MOCK_CIUDADANO } from '@/lib/mock-data';
 
 function fmt(n: number) {
   return new Intl.NumberFormat('es-MX', {
@@ -21,38 +22,61 @@ export default async function PagarPage({ params }: { params: { id: string } }) 
     redirect('/login');
   }
 
-  const admin = createSupabaseServiceClient();
+  const isDemo = isDemoCiudadano(user.email);
 
-  // ── 1. Obtener Obligación real ──────────────────────────────
-  const { data: ob, error } = await admin
-    .from('obligaciones')
-    .select('id, tipo_tramite, monto_total, monto_pendiente, ciudadano_id, estado_cumplimiento')
-    .eq('id', params.id)
-    .maybeSingle();
+  let concepto = '';
+  let monto = 0;
+  let clabe = '646180500001110003';
+  let obligacionId = params.id;
 
-  if (error || !ob) {
-    notFound();
+  if (isDemo) {
+    // ═══════════════════════════════════════════════════════════════════════
+    // MODO DEMO: Buscar en datos mock
+    // ═══════════════════════════════════════════════════════════════════════
+    const ob = MOCK_OBLIGACIONES.find(o => o.id === params.id) ?? MOCK_OBLIGACIONES[0];
+
+    if (ob.estado_cumplimiento === 'Pagado') {
+      redirect('/dashboard');
+    }
+
+    concepto = ob.tipo_tramite;
+    monto = ob.monto_pendiente ?? ob.monto_total;
+    clabe = MOCK_CIUDADANO.cuenta_stp_clabe;
+    obligacionId = ob.id;
+  } else {
+    // ═══════════════════════════════════════════════════════════════════════
+    // MODO REAL: Buscar en Supabase
+    // ═══════════════════════════════════════════════════════════════════════
+    const admin = createSupabaseServiceClient();
+
+    const { data: ob, error } = await admin
+      .from('obligaciones')
+      .select('id, tipo_tramite, monto_total, monto_pendiente, ciudadano_id, estado_cumplimiento')
+      .eq('id', params.id)
+      .maybeSingle();
+
+    if (error || !ob) {
+      // Si no se encuentra, redirigir al dashboard en lugar de 404
+      redirect('/dashboard');
+    }
+
+    if (ob.estado_cumplimiento === 'Pagado') {
+      redirect('/dashboard');
+    }
+
+    const { data: ciudadano } = await admin
+      .from('ciudadanos')
+      .select('cuenta_stp_clabe')
+      .eq('id', ob.ciudadano_id)
+      .maybeSingle();
+
+    concepto = ob.tipo_tramite;
+    monto = ob.monto_pendiente ?? ob.monto_total;
+    clabe = ciudadano?.cuenta_stp_clabe || '646180500001234567';
+    obligacionId = ob.id;
   }
 
-  if (ob.estado_cumplimiento === 'Pagado') {
-    // Redirigir al dashboard si ya está pagado
-    redirect('/dashboard');
-  }
-
-  // ── 2. Obtener CLABE del ciudadano ───────────────────────────
-  const { data: ciudadano } = await admin
-    .from('ciudadanos')
-    .select('cuenta_stp_clabe')
-    .eq('id', ob.ciudadano_id)
-    .maybeSingle();
-
-  const clabe = ciudadano?.cuenta_stp_clabe || '646180500001234567';
-  const monto = ob.monto_pendiente ?? ob.monto_total;
-  const concepto = `TOJ ${ob.id.slice(0, 8).toUpperCase()}`;
-
-  // ── 3. Generar Clave de Rastreo (para la simulación) ────────
-  // En un flujo real, esto se guardaría en la tabla `pagos` al iniciar la intención de pago
-  const claveRastreo = `TOJ-RASTREO-${ob.id.slice(0, 6)}-${Date.now().toString().slice(-4)}`;
+  const referencia = `TOJ ${obligacionId.slice(0, 8).toUpperCase()}`;
 
   return (
     <main className="min-h-screen bg-surface">
@@ -61,16 +85,14 @@ export default async function PagarPage({ params }: { params: { id: string } }) 
           <span className="material-symbols-outlined text-on-surface-variant text-[24px]">arrow_back</span>
         </Link>
         <span className="text-primary font-bold text-[18px]">TOJ Platform</span>
-        <button aria-label="Mas opciones" className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container transition-colors">
-          <span className="material-symbols-outlined text-on-surface-variant text-[24px]">more_vert</span>
-        </button>
+        <div className="w-10 h-10" />
       </header>
 
       <div className="px-5 py-6 space-y-5 pb-10">
         <div>
           <p className="text-secondary text-label-caps font-bold tracking-widest uppercase">Resumen de Pago</p>
-          <h1 className="text-h2 font-bold text-on-surface mt-1">{ob.tipo_tramite}</h1>
-          <p className="text-body-sm text-on-surface-variant mt-1">ID Obligación: {ob.id}</p>
+          <h1 className="text-h2 font-bold text-on-surface mt-1">{concepto}</h1>
+          <p className="text-body-sm text-on-surface-variant mt-1">Ref: {referencia}</p>
         </div>
 
         <div className="bg-surface-container-low rounded-2xl px-5 py-4 flex items-center justify-between">
@@ -81,7 +103,7 @@ export default async function PagarPage({ params }: { params: { id: string } }) 
         <div className="bg-surface-container-lowest border border-outline-variant rounded-2xl p-5 space-y-4">
           <div className="text-center space-y-1">
             <p className="text-on-surface font-semibold text-body-md">Transferencia via STP</p>
-            <p className="text-on-surface-variant text-body-sm">Escanea el codigo QR desde tu App bancaria</p>
+            <p className="text-on-surface-variant text-body-sm">Escanea el código QR desde tu app bancaria</p>
           </div>
           <div className="mx-auto w-44 h-44 bg-surface-container rounded-xl border-2 border-outline-variant flex items-center justify-center">
             <span className="material-symbols-outlined text-on-surface-variant" style={{ fontSize: '80px', fontVariationSettings: "'FILL' 0" }}>qr_code_2</span>
@@ -90,7 +112,7 @@ export default async function PagarPage({ params }: { params: { id: string } }) 
         </div>
 
         <div className="space-y-2">
-          <p className="text-label-caps text-on-surface-variant font-bold tracking-widest uppercase">CLABE Unica de Pago</p>
+          <p className="text-label-caps text-on-surface-variant font-bold tracking-widest uppercase">CLABE Única de Pago</p>
           <div className="bg-surface-container-low rounded-xl px-4 py-3 flex items-center justify-between gap-3">
             <span className="font-mono text-body-sm text-on-surface tracking-wider flex-1">{clabe}</span>
             <button aria-label="Copiar CLABE" className="text-primary hover:bg-primary/10 rounded-lg p-1 transition-colors">
@@ -102,7 +124,7 @@ export default async function PagarPage({ params }: { params: { id: string } }) 
         <div className="bg-surface-container-low rounded-xl px-4 py-3 space-y-2">
           <div className="flex justify-between text-body-sm">
             <span className="text-on-surface-variant">Referencia / Concepto</span>
-            <span className="font-mono text-on-surface font-medium uppercase">{concepto}</span>
+            <span className="font-mono text-on-surface font-medium uppercase">{referencia}</span>
           </div>
           <div className="flex justify-between text-body-sm">
             <span className="text-on-surface-variant">Banco receptor</span>
@@ -116,21 +138,22 @@ export default async function PagarPage({ params }: { params: { id: string } }) 
 
         <div className="flex items-center gap-3 py-2">
           <div className="w-5 h-5 rounded-full border-2 border-primary border-t-transparent animate-spin shrink-0" />
-          <p className="text-on-surface-variant text-body-sm italic">Esperando confirmacion de transferencia via STP...</p>
+          <p className="text-on-surface-variant text-body-sm italic">Esperando confirmación de transferencia via STP...</p>
         </div>
 
         {/* Botón de simulación (Client Component) */}
         <SimularPagoBtn
+          isDemo={isDemo}
           pagoData={{
-            clave_rastreo: claveRastreo,
+            obligacion_id: obligacionId,
             monto: monto,
-            referencia: concepto,
-            obligacion_id: ob.id
+            referencia: referencia,
+            clave_rastreo: `TOJ${Date.now().toString().slice(-8)}`,
           }}
         />
 
         <p className="text-center text-[11px] text-on-surface-variant leading-relaxed">
-          Los pagos son procesados de forma segura a traves de STP. El saldo se refleja en tiempo real tras la confirmación bancaria.
+          Los pagos son procesados de forma segura a través de STP. El saldo se refleja en tiempo real tras la confirmación bancaria.
         </p>
       </div>
     </main>
