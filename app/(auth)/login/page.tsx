@@ -2,6 +2,7 @@
 
 import { useState, useTransition, Suspense } from 'react';
 import Link from 'next/link';
+import type { Route } from 'next';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { signInWithPassword, signInWithMagicLink } from './actions';
 
@@ -31,7 +32,7 @@ function LoginContent() {
         if ('error' in res) {
           setError(res.error);
         } else if ('redirect' in res) {
-          router.push(res.redirect);
+          router.push(res.redirect as Route);
           router.refresh();
         }
       } catch (e: any) {
