@@ -2,7 +2,7 @@
 
 import { useState, useTransition, Suspense } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { signInWithPassword, signInWithMagicLink } from './actions';
 
 type Tab = 'password' | 'magic';
@@ -11,6 +11,7 @@ function LoginContent() {
   const searchParams = useSearchParams();
   const paramMessage = searchParams.get('message');
   const paramError = searchParams.get('error');
+  const router = useRouter();
 
   const [tab, setTab] = useState<Tab>('password');
   const [email, setEmail] = useState('');
@@ -25,8 +26,20 @@ function LoginContent() {
   const handlePasswordLogin = () => {
     setError('');
     startTransition(async () => {
-      const res = await signInWithPassword(email, password);
-      if (res?.error) setError(res.error);
+      try {
+        const res = await signInWithPassword(email, password);
+        if ('error' in res) {
+          setError(res.error);
+        } else if ('redirect' in res) {
+          router.push(res.redirect);
+          router.refresh();
+        }
+      } catch (e: any) {
+        // Ignorar errores NEXT_REDIRECT (no deberían llegar aquí)
+        if (!e?.digest?.includes?.('NEXT_REDIRECT')) {
+          setError('Error al iniciar sesión. Intenta de nuevo.');
+        }
+      }
     });
   };
 

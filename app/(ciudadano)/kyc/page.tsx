@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase/server';
 import { KycFlow } from './KycFlow';
+import { isDemoCiudadano, isDemoAdmin } from '@/lib/mock-data';
 
 /**
  * Página de KYC - Server Component
@@ -13,6 +14,15 @@ export default async function KycPage() {
 
   if (!user) {
     redirect('/login');
+  }
+
+  // Demo: ciudadano demo siempre verificado → directo al dashboard
+  if (isDemoCiudadano(user.email)) {
+    redirect('/dashboard');
+  }
+  // Demo: admin demo → directo al panel admin
+  if (isDemoAdmin(user.email)) {
+    redirect('/admin');
   }
 
   const admin = createSupabaseServiceClient();

@@ -7,11 +7,16 @@ import { redirect } from 'next/navigation';
 export async function signInWithPassword(
   email: string,
   password: string
-): Promise<{ error: string } | void> {
+): Promise<{ error: string } | { success: true; redirect: string }> {
   const supabase = createSupabaseServerClient();
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) return { error: error.message };
-  redirect('/dashboard');
+
+  // Determinar destino según el email (evitar redirect() en Server Action con useTransition)
+  const email_lower = data.user?.email?.toLowerCase() ?? '';
+  const isAdmin = ['admin@toj.gob.mx', 'contacto@toj.gob.mx', '226w0702@zongolica.tecnm.mx'].includes(email_lower);
+
+  return { success: true, redirect: isAdmin ? '/admin' : '/dashboard' };
 }
 
 /** Magic Link — envía email con link de acceso */

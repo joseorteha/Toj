@@ -1,7 +1,7 @@
 "use server";
 
-import { redirect } from 'next/navigation';
 import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase/server';
+import { isDemoCiudadano } from '@/lib/mock-data';
 
 /**
  * finalizarKyc — Sube selfie y comprobante a Supabase Storage,
@@ -12,12 +12,17 @@ import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/s
  */
 export async function finalizarKyc(
   formData: FormData
-): Promise<{ error: string } | void> {
+): Promise<{ error?: string; success?: boolean }> {
   const supabase = createSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect('/login');
+    return { error: 'No autenticado' };
+  }
+
+  // MODO DEMO: no hacer nada en la BD, retornar éxito
+  if (isDemoCiudadano(user.email)) {
+    return { success: true };
   }
 
   const admin = createSupabaseServiceClient();
@@ -149,5 +154,5 @@ export async function finalizarKyc(
       origen: 'nextjs',
     });
 
-  redirect('/kyc?status=pendiente');
+  return { success: true };
 }

@@ -11,6 +11,7 @@ interface Props {
   nombreCompleto: string;
   tieneSelfie: boolean;
   tieneComprobante: boolean;
+  isDemo?: boolean;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -313,11 +314,27 @@ function StepFinalizar({
   const handleEnviar = () => {
     setError('');
     startTransition(async () => {
-      const formData = new FormData();
-      if (selfieFile) formData.append('selfie', selfieFile);
-      if (comprobanteFile) formData.append('comprobante', comprobanteFile);
-      const result = await finalizarKyc(formData);
-      if (result?.error) setError(result.error);
+      try {
+        const formData = new FormData();
+        if (selfieFile) formData.append('selfie', selfieFile);
+        if (comprobanteFile) formData.append('comprobante', comprobanteFile);
+        const result = await finalizarKyc(formData);
+        if (result?.error) {
+          setError(result.error);
+        } else if (result?.success) {
+          // Navegar en el cliente para evitar problemas con redirect en Server Actions
+          router.push('/dashboard');
+          router.refresh();
+        }
+      } catch (e: any) {
+        // redirect() lanza una excepción especial de Next.js, la ignoramos
+        if (e?.message?.includes('NEXT_REDIRECT') || e?.digest?.includes('NEXT_REDIRECT')) {
+          router.push('/dashboard');
+          router.refresh();
+          return;
+        }
+        setError('Ocurrió un error. Intenta de nuevo.');
+      }
     });
   };
 
@@ -389,7 +406,7 @@ function StepFinalizar({
 // ══════════════════════════════════════════════════════════════════════════════
 // COMPONENTE PRINCIPAL
 // ══════════════════════════════════════════════════════════════════════════════
-export function KycFlow({ estadoKyc, nombreCompleto, tieneSelfie, tieneComprobante }: Props) {
+export function KycFlow({ estadoKyc, nombreCompleto, tieneSelfie, tieneComprobante, isDemo }: Props) {
   const [pasoActual, setPasoActual] = useState(() => {
     // Si ya envió documentos (EnProceso), ir directo al paso 3
     if (estadoKyc === 'EnProceso' && tieneSelfie && tieneComprobante) return 3;
